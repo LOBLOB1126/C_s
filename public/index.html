@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Application Sécurisée - Gestion de Données</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="https://www.google.com/recaptcha/api.js?onload=onGrecaptchaLoad&render=explicit" async defer></script>
+</head>
+<body>
+    <div class="container" id="app">
+        <!-- Navigation -->
+        <nav class="navbar" id="navbar" style="display: none;">
+            <div class="nav-brand">
+                <h2>🔒 SecureApp</h2>
+            </div>
+            <div class="nav-links">
+                <a href="#" data-action="showProfile">Profil</a>
+                <a href="#" data-action="showSecurity">Sécurité</a>
+                <a href="#" id="adminLink" style="display: none;" data-action="showAdmin">Administration</a>
+                <a href="#" data-action="logout">Déconnexion</a>
+            </div>
+        </nav>
+
+        <!-- Formulaire de connexion -->
+        <div class="auth-container" id="loginForm">
+            <div class="auth-card">
+                <h2>Connexion</h2>
+                <form id="loginFormElement">
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="loginEmail" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Mot de passe</label>
+                        <input type="password" id="loginPassword" required>
+                    </div>
+                    <div class="form-group">
+                        <div class="recaptcha-container">
+                            <div id="recaptcha-login"></div>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Se connecter</button>
+                    <div class="form-links">
+                        <a href="#" data-action="showRegister">Créer un compte</a>
+                        <a href="#" data-action="showPasswordReset">Mot de passe oublié?</a>
+                    </div>
+                </form>
+                <div id="loginMessage" class="message"></div>
+            </div>
+        </div>
+
+        <!-- Formulaire d'inscription -->
+        <div class="auth-container" id="registerForm" style="display: none;">
+            <div class="auth-card">
+                <h2>Inscription</h2>
+                <form id="registerFormElement">
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="registerEmail" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Mot de passe</label>
+                        <input type="password" id="registerPassword" required>
+                        <small>Min 8 caractères, majuscule, minuscule, chiffre et caractère spécial</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Téléphone (optionnel)</label>
+                        <input type="tel" id="registerPhone" placeholder="+33612345678">
+                    </div>
+                    <div class="form-group">
+                        <div class="recaptcha-container">
+                            <div id="recaptcha-register"></div>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">S'inscrire</button>
+                    <div class="form-links">
+                        <a href="#" data-action="showLogin">Déjà un compte? Se connecter</a>
+                    </div>
+                </form>
+                <div id="registerMessage" class="message"></div>
+            </div>
+        </div>
+
+        <!-- Vérification Email -->
+        <div class="auth-container" id="verifyEmailForm" style="display: none;">
+            <div class="auth-card">
+                <h2>Vérification Email</h2>
+                <p>Un code de vérification a été envoyé à votre email.</p>
+                <form id="verifyEmailFormElement">
+                    <div class="form-group">
+                        <label>Code de vérification</label>
+                        <input type="text" id="verifyCode" maxlength="6" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Vérifier</button>
+                    <div class="form-links">
+                        <a href="#" data-action="resendCode">Renvoyer le code</a>
+                    </div>
+                </form>
+                <div id="verifyMessage" class="message"></div>
+            </div>
+        </div>
+
+        <!-- Vérification 2FA -->
+        <div class="auth-container" id="verify2FAForm" style="display: none;">
+            <div class="auth-card">
+                <h2>Authentification 2FA</h2>
+                <p>Entrez le code généré par votre application d'authentification.</p>
+                <form id="verify2FAFormElement">
+                    <div class="form-group">
+                        <label>Code 2FA</label>
+                        <input type="text" id="twoFACode" maxlength="6" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Vérifier</button>
+                </form>
+                <div id="2faMessage" class="message"></div>
+            </div>
+        </div>
+
+        <!-- Demande de réinitialisation de mot de passe -->
+        <div class="auth-container" id="passwordResetRequestForm" style="display: none;">
+            <div class="auth-card">
+                <h2>Mot de passe oublié</h2>
+                <p>Entrez votre adresse email et nous vous enverrons un code de réinitialisation.</p>
+                <form id="passwordResetRequestFormElement">
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="resetEmail" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Envoyer le code</button>
+                    <div class="form-links">
+                        <a href="#" data-action="showLogin">Retour à la connexion</a>
+                    </div>
+                </form>
+                <div id="resetRequestMessage" class="message"></div>
+            </div>
+        </div>
+
+        <!-- Réinitialisation de mot de passe avec code -->
+        <div class="auth-container" id="passwordResetForm" style="display: none;">
+            <div class="auth-card">
+                <h2>Réinitialiser le mot de passe</h2>
+                <p>Entrez le code reçu par email et votre nouveau mot de passe.</p>
+                <form id="passwordResetFormElement">
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="resetPasswordEmail" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Code de réinitialisation</label>
+                        <input type="text" id="resetCode" maxlength="6" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Nouveau mot de passe</label>
+                        <input type="password" id="newPasswordReset" required>
+                        <small>Min 8 caractères, majuscule, minuscule, chiffre et caractère spécial</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Confirmer le mot de passe</label>
+                        <input type="password" id="confirmPasswordReset" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Réinitialiser le mot de passe</button>
+                    <div class="form-links">
+                        <a href="#" data-action="showLogin">Retour à la connexion</a>
+                    </div>
+                </form>
+                <div id="resetMessage" class="message"></div>
+            </div>
+        </div>
+
+        <!-- Dashboard -->
+        <div class="dashboard" id="dashboard" style="display: none;">
+            <h1>Tableau de bord</h1>
+
+            <!-- Section Profil -->
+            <div class="card" id="profileSection">
+                <h2>Mon Profil</h2>
+                <div id="profileContent"></div>
+                
+            </div>
+
+            <!-- Section Sécurité -->
+            <div class="card" id="securitySection" style="display: none;">
+                <h2>Sécurité</h2>
+                <div id="profileMessage" class="message" style="display: none;"></div>
+
+                <!-- Vérifications -->
+                <div class="security-item">
+                    <h3>Vérifications du Compte</h3>
+                    
+                    <!-- Email -->
+                    <div class="verification-block" id="emailVerificationSection">
+                        <h4>Email <span id="emailVerificationStatus"></span></h4>
+                        <div id="emailVerificationContent">
+                            <p class="current-value"></p>
+                            <button class="btn btn-primary" data-action="sendEmailVerification">Vérifier l'email</button>
+                            <div class="verification-form" style="display: none;">
+                                <div class="form-group">
+                                    <label>Code de vérification</label>
+                                    <input type="text" id="emailVerificationCode" maxlength="6">
+                                </div>
+                                <button class="btn btn-primary" data-action="verifyEmail">Confirmer</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Téléphone -->
+                    <div class="verification-block" id="phoneVerificationSection">
+                        <h4>Téléphone <span id="phoneVerificationStatus"></span></h4>
+                        <div id="phoneVerificationContent">
+                            <div class="form-group">
+                                <label>Numéro de téléphone</label>
+                                <input type="tel" id="phoneNumber" placeholder="+33612345678">
+                            </div>
+                            <button class="btn btn-primary" data-action="updatePhone">Mettre à jour</button>
+                            <div class="verification-form" style="display: none;">
+                                <div class="form-group">
+                                    <label>Code de vérification</label>
+                                    <input type="text" id="phoneVerificationCode" maxlength="6">
+                                </div>
+                                <button class="btn btn-primary" data-action="verifyPhone">Vérifier</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2FA -->
+                <div class="security-item">
+                    <h3>Authentification à deux facteurs (2FA)</h3>
+                    <div id="2faContent"></div>
+                </div>
+
+                <!-- Changer mot de passe -->
+                <div class="security-item">
+                    <h3>Changer le mot de passe</h3>
+                    <form id="changePasswordFormElement">
+                        <div class="form-group">
+                            <label>Mot de passe actuel</label>
+                            <input type="password" id="currentPassword" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Nouveau mot de passe</label>
+                            <input type="password" id="newPassword" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Changer</button>
+                    </form>
+                </div>
+
+                <!-- Sessions actives -->
+                <div class="security-item">
+                    <h3>Sessions actives</h3>
+                    <div id="sessionsContent"></div>
+                </div>
+
+                <!-- Logs de sécurité -->
+                <div class="security-item">
+                    <h3>Logs de sécurité</h3>
+                    <div id="logsContent"></div>
+                </div>
+            </div>
+
+            <!-- Section Admin -->
+            <div class="card" id="adminSection" style="display: none;">
+                <h2>Administration</h2>
+                <div id="adminContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/console-protection.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>

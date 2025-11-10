@@ -1,0 +1,355 @@
+import { query } from '../database/db.js';
+import { logSecurityEvent, SecurityActions } from '../utils/logger.js';
+
+export const getAllUsers = async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 50;
+        const offset = (page - 1) * limit;
+
+        const usersResult = await query(
+            `SELECT u.id, u.email, u.phone, u.is_email_verified, u.is_phone_verified,
+                    u.is_2fa_enabled, u.last_login, u.created_at,
+                    r.name as role, r.priority as role_priority
+            FROM users u
+            LEFT JOIN roles r ON u.role_id = r.id
+            ORDER BY u.created_at DESC
+            LIMIT $1 OFFSET $2`,
+            [limit, offset]
+        );
+
+        const countResult = await query('SELECT COUNT(*) FROM users');
+        const totalUsers = parseInt(countResult.rows[0].count);
+
+        res.json({
+            success: true,
+            data: {
+                users: usersResult.rows,
+                pagination: {
+                    page,
+                    limit,
+                    total: totalUsers,
+                    totalPages: Math.ceil(totalUsers / limit)
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching users:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching users'
+        });
+    }
+};
+
+export const getUserById = async (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        const userResult = await query(
+            `SELECT u.id, u.email, u.phone, u.is_email_verified, u.is_phone_verified,
+                    u.is_2fa_enabled, u.last_login, u.created_at, u.login_attempts, u.locked_until,
+                    r.name as role, r.priority as role_priority
+            FROM users u
+            LEFT JOIN roles r ON u.role_id = r.id
+            WHERE u.id = $1`,
+            [userId]
+        );
+
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            data: userResult.rows[0]
+        });
+    } catch (error) {
+        console.error('Error fetching user:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching user'
+        });
+    }
+};
+
+export const changeUserRole = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { roleName } = req.body;
+        const adminId = req.user.id;
+
+        const userResult = await query(
+            'SELECT id, email FROM users WHERE id = $1',
+            [userId]
+        );
+
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        if (userId === adminId) {
+            return res.status(403).json({
+                success: false,
+                message: 'Cannot change your own role'
+            });
+        }
+
+        const roleResult = await query(
+            'SELECT id, name FROM roles WHERE name = $1',
+            [roleName]
+        );
+
+        if (roleResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Role not found'
+            });
+        }
+
+        await query(
+            'UPDATE users SET role_id = $1 WHERE id = $2',
+            [roleResult.rows[0].id, userId]
+        );
+
+        await logSecurityEvent(
+            adminId,
+            SecurityActions.ROLE_CHANGE,
+            true,
+            `Changed role of user ${userResult.rows[0].email} to ${roleName}`,
+            req
+        );
+
+        res.json({
+            success: true,
+            message: `User role changed to ${roleName}`
+        });
+    } catch (error) {
+        console.error('Error changing role:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error changing role'
+        });
+    }
+};
+
+export const toggleUserLock = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { lock } = req.body;
+        const adminId = req.user.id;
+
+        if (userId === adminId) {
+            return res.status(403).json({
+                success: false,
+                message: 'Cannot lock your own account'
+            });
+        }
+
+        const userResult = await query(
+            'SELECT id, email FROM users WHERE id = $1',
+            [userId]
+        );
+
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        const lockedUntil = lock ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) : null;
+
+        await query(
+            'UPDATE users SET locked_until = $1 WHERE id = $2',
+            [lockedUntil, userId]
+        );
+
+        await logSecurityEvent(
+            adminId,
+            lock ? SecurityActions.ACCOUNT_LOCKED : SecurityActions.ACCOUNT_UNLOCKED,
+            true,
+            `${lock ? 'Locked' : 'Unlocked'} account of user ${userResult.rows[0].email}`,
+            req
+        );
+
+        res.json({
+            success: true,
+            message: `Account ${lock ? 'locked' : 'unlocked'} successfully`
+        });
+    } catch (error) {
+        console.error('Error toggling lock:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error processing request'
+        });
+    }
+};
+
+export const deleteUser = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const adminId = req.user.id;
+
+        if (userId === adminId) {
+            return res.status(403).json({
+                success: false,
+                message: 'Cannot delete your own account'
+            });
+        }
+
+        const userResult = await query(
+            'SELECT id, email FROM users WHERE id = $1',
+            [userId]
+        );
+
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        await query('DELETE FROM users WHERE id = $1', [userId]);
+
+        await logSecurityEvent(
+            adminId,
+            SecurityActions.USER_DELETED,
+            true,
+            `Deleted user account ${userResult.rows[0].email}`,
+            req
+        );
+
+        res.json({
+            success: true,
+            message: 'User deleted successfully'
+        });
+    } catch (error) {
+        console.error('Error deleting user:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error deleting user'
+        });
+    }
+};
+
+export const getSecurityStats = async (req, res) => {
+    try {
+        const totalUsers = await query('SELECT COUNT(*) as count FROM users');
+        const verifiedUsers = await query('SELECT COUNT(*) as count FROM users WHERE is_email_verified = TRUE');
+        const users2FA = await query('SELECT COUNT(*) as count FROM users WHERE is_2fa_enabled = TRUE');
+        const failedLogins = await query(
+            `SELECT COUNT(*) as count FROM security_logs
+            WHERE action = $1 AND success = FALSE
+            AND created_at > NOW() - INTERVAL '24 hours'`,
+            [SecurityActions.LOGIN]
+        );
+        const lockedAccounts = await query(
+            'SELECT COUNT(*) as count FROM users WHERE locked_until > NOW()'
+        );
+
+        res.json({
+            success: true,
+            data: {
+                totalUsers: parseInt(totalUsers.rows[0].count),
+                verifiedUsers: parseInt(verifiedUsers.rows[0].count),
+                users2FA: parseInt(users2FA.rows[0].count),
+                failedLogins24h: parseInt(failedLogins.rows[0].count),
+                lockedAccounts: parseInt(lockedAccounts.rows[0].count)
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching stats:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching security stats'
+        });
+    }
+};
+
+export const getAllSecurityLogs = async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 100;
+        const offset = (page - 1) * limit;
+
+        const logsResult = await query(
+            `SELECT sl.*, u.email as user_email
+            FROM security_logs sl
+            LEFT JOIN users u ON sl.user_id = u.id
+            ORDER BY sl.created_at DESC
+            LIMIT $1 OFFSET $2`,
+            [limit, offset]
+        );
+
+        const countResult = await query('SELECT COUNT(*) FROM security_logs');
+        const totalLogs = parseInt(countResult.rows[0].count);
+
+        res.json({
+            success: true,
+            data: {
+                logs: logsResult.rows,
+                pagination: {
+                    page,
+                    limit,
+                    total: totalLogs,
+                    totalPages: Math.ceil(totalLogs / limit)
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching logs:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching security logs'
+        });
+    }
+};
+
+export const getRoles = async (req, res) => {
+    try {
+        const rolesResult = await query(
+            'SELECT id, name, priority, description, permissions FROM roles ORDER BY priority DESC'
+        );
+
+        res.json({
+            success: true,
+            data: rolesResult.rows
+        });
+    } catch (error) {
+        console.error('Error fetching roles:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching roles'
+        });
+    }
+};
+
+export const updateRolePermissions = async (req, res) => {
+    try {
+        const { roleId } = req.params;
+        const { permissions } = req.body;
+
+        if (typeof permissions !== 'object' || permissions === null) {
+            return res.status(400).json({ success: false, message: 'Invalid permissions' });
+        }
+
+        const roleResult = await query('SELECT id, name FROM roles WHERE id = $1', [roleId]);
+        if (roleResult.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Role not found' });
+        }
+
+        await query('UPDATE roles SET permissions = $1::jsonb WHERE id = $2', [permissions, roleId]);
+
+        res.json({ success: true, message: 'Role permissions updated' });
+    } catch (error) {
+        console.error('Error updating permissions:', error);
+        res.status(500).json({ success: false, message: 'Error updating permissions' });
+    }
+};
